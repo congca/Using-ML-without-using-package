@@ -1,0 +1,99 @@
+########################################################################
+### Leave-one- out Classification and machine learning #################
+########################################################################
+
+classifier.loo <- function(diag.dat,classifiers=c("svm","lda","rf"),feature.selection="auc",is.fast=T,no.feat=20,pos,rep.n=NULL,k.Imputation=3, k.MI=3){
+  names(diag.dat)[ncol(diag.dat)] <- "class.label"
+  labs<-diag.dat[,ncol(diag.dat)]
+  labs<-as.factor(labs)#####to create levels, this means from character to factor
+  num.dat<-data.frame(diag.dat[,-ncol(diag.dat)])
+  names(num.dat)<-names(diag.dat)[-ncol(diag.dat)]
+  level<-levels(labs)
+  
+  if(is.null(rep.n)){
+     rep.n<-nrow(diag.dat)
+  }
+  combination.tab<-matrix(0, nrow=rep.n, ncol=ncol(num.dat))
+  colnames(combination.tab)<-names(diag.dat)[-ncol(diag.dat)]
+  
+  classi <- matrix(NA,nrow=rep.n,ncol=length(classifiers))
+  scores <- matrix(NA,nrow=rep.n,ncol=length(classifiers))
+  cor.classified <- matrix(NA,nrow=rep.n,ncol=length(classifiers))
+  colnames(classi) <- classifiers
+  colnames(scores) <- classifiers
+  colnames(cor.classified) <- classifiers
+
+### Selecting features
+    selfea.res <- select.features(dti,method=feature.selection,is.fast=is.fast,max.no.features=no.feat,pos=pos, k.MI=k.MI)
+    selfea<-selfea.res$features
+    dtisel <- dti[,c(selfea,ncol(dti))]
+    No.feats[i]<-length(selfea)
+    combination.tab[i,]<-selfea.res$weight
+    for (j in 1:length(classifiers)){
+
+### Support vector machine
+
+      if (length(grep("svm",classifiers))>0){
+        svm.mod <- svm(as.formula("class.label~."),dtisel,probability=T)
+
+        classi[i,"svm"] <- toString(predict(svm.mod,test.dat,type="class"))
+         
+        value<-attr(predict(svm.mod,test.dat,probability=T),"probabilities")
+        scores[i,"svm"] <- predict.score(value, classi[i,"svm"], level)     
+      }
+  
+
+### Linear discriminant analysis
+
+      if (length(grep("lda",classifiers))>0){
+        lda.mod <- lda(as.formula("class.label~."),dtisel,na.action=na.omit)
+        
+        classi[i,"lda"] <- toString(predict(lda.mod,test.dat)$class)
+
+        value <- predict(lda.mod,test.dat)$posterior
+	scores[i,"lda"] <- predict.score(value, classi[i,"lda"], level)
+      }
+
+
+      
+### Random forest
+      if (length(grep("rf",classifiers))>0){
+        rf.mod <- randomForest(as.formula("class.label~."),dtisel,na.action=na.omit)
+        
+        classi[i,"rf"] <- toString(predict(rf.mod,test.dat,type="class"))
+		
+	value<-predict(rf.mod,test.dat,type="prob")
+	scores[i,"rf"] <- predict.score(value, classi[i,"rf"], level)
+      }
+
+    }
+    
+  }
+
+  
+  if (length(grep("svm",classifiers))>0){
+    cor.classified[,"svm"] <- correct.classified(diag.dat[1:rep.n,],classi[,"svm"]) 
+  }
+  if (length(grep("lda",classifiers))>0){
+    cor.classified[,"lda"] <- correct.classified(diag.dat[1:rep.n,],classi[,"lda"]) 
+  }
+  if (length(grep("rf",classifiers))>0){
+    cor.classified[,"rf"] <- correct.classified(diag.dat[1:rep.n,],classi[,"rf"]) 
+  }
+
+  classscores <- data.frame(classi,scores,cor.classified)
+  scorenames <- rep(".prob",length(classifiers))
+  cor.clnames <- rep(".correct",length(classifiers)) 
+  for (i in 1:length(classifiers)){
+    scorenames[i] <- paste(classifiers[i],scorenames[i],sep="")
+    cor.clnames[i] <- paste(classifiers[i],cor.clnames[i],sep="")
+  }  
+  names(classscores) <- c(classifiers,scorenames,cor.clnames)
+  
+  freq.selected<-apply(combination.tab,2,sum)/nrow(diag.dat)
+  
+  res <- list(predictions=classscores,prop.selected=freq.selected, no.featurs=No.feats)
+  return(res)
+}
+#Done
+
